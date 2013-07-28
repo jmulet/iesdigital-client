@@ -4,12 +4,16 @@
  */
 package org.iesapp.clients.iesdigital;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.iesapp.clients.UClient;
 import org.iesapp.clients.iesdigital.anuncis.AnuncisClient;
 import org.iesapp.clients.iesdigital.dates.BeanFestiu;
 import org.iesapp.clients.iesdigital.dates.DatesCollection;
@@ -23,7 +27,10 @@ import org.iesapp.clients.iesdigital.reserves.ReservesClient;
 import org.iesapp.clients.iesdigital.spaces.BeanEspai;
 import org.iesapp.clients.iesdigital.spaces.Espai;
 import org.iesapp.clients.iesdigital.spaces.SpacesCollection;
+import org.iesapp.database.Compare;
+import org.iesapp.database.CompareIncidence;
 import org.iesapp.database.MyDatabase;
+import org.iesapp.database.ScriptRunner;
 import org.iesapp.util.Version;
  
 
@@ -34,7 +41,7 @@ import org.iesapp.util.Version;
  * @author Josep
  */
 @Version(version="4.5.1")
-public class IesDigitalClient implements IClient {
+public class IesDigitalClient implements IClient, UClient {
     private final MyDatabase mysql;
     private final MyDatabase sgd;
     private SpacesCollection spacesCollection;
@@ -49,6 +56,9 @@ public class IesDigitalClient implements IClient {
     protected ReservesClient reservesClient;
     protected AnuncisClient anuncisClient;
     private MissatgeriaCollection missatgeriaCollection;
+    private ArrayList<CompareIncidence> compareStructure2;
+    private ArrayList<CompareIncidence> compareStructure1;
+    private int checkedYear = 0;
             
      
     public IesDigitalClient(MyDatabase mysql, MyDatabase sgd, ICoreData coredata)
@@ -234,6 +244,7 @@ public class IesDigitalClient implements IClient {
     }
     
     
+    @Override
     public String getClientVersion()
     {
         Version annotation = this.getClass().getAnnotation(Version.class);
@@ -242,7 +253,7 @@ public class IesDigitalClient implements IClient {
             return annotation.version();
         }
         
-        return "[4.5.1]";
+        return "4.5.1";
     }
     
      /**
@@ -271,4 +282,191 @@ public class IesDigitalClient implements IClient {
         
          return list;
     }
+    
+    
+    @Override
+    public String checkDatabases(int year) {
+        
+        //Create a clone of database connection
+        MyDatabase mysqlClone = new MyDatabase(mysql.getConBean());
+        boolean connect = mysqlClone.connect();
+        if(!connect)
+        {
+            return "ERROR: no database connection";
+        }
+        
+        String result="";
+        this.checkedYear = year;
+        compareStructure1 = null;
+        compareStructure2 = null;
+        
+        if(ICoreData.core_mysqlDBPrefix!=null && ICoreData.core_mysqlDBPrefix.isEmpty())
+        {
+        boolean doesSchemaExists = mysqlClone.doesSchemaExists(ICoreData.core_mysqlDBPrefix);
+        if(!doesSchemaExists)
+        {
+            System.out.println("Creating "+ICoreData.core_mysqlDBPrefix);
+            mysqlClone.executeUpdate("CREATE DATABASE "+ICoreData.core_mysqlDBPrefix);
+            mysqlClone.setCatalog(ICoreData.core_mysqlDBPrefix);
+            InputStream istream = getClass().getResourceAsStream("/org/iesapp/clients/iesdigital/sql/iesdigital.sql");
+            ScriptRunner srun = new ScriptRunner(mysqlClone.getConnection(), false, false);
+            try {
+                srun.runScript(new InputStreamReader(istream));
+            } catch (IOException ex) {
+                Logger.getLogger(IesDigitalClient.class.getName()).log(Level.SEVERE, null, ex);
+            } catch (SQLException ex) {
+                Logger.getLogger(IesDigitalClient.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+        }
+        else
+        {
+            //Check from temporal script
+            String tmpDB = "tmp"+Math.round(Math.random()*1e8);
+            mysqlClone.executeUpdate("CREATE DATABASE "+tmpDB);
+            System.out.println("Creating "+ tmpDB);
+            mysqlClone.setCatalog(tmpDB);
+            //Create from script
+            InputStream istream = getClass().getResourceAsStream("/org/iesapp/clients/iesdigital/sql/iesdigital.sql");
+            ScriptRunner srun = new ScriptRunner(mysqlClone.getConnection(), false, false);
+            try {
+                srun.runScript(new InputStreamReader(istream));
+            } catch (IOException ex) {
+                Logger.getLogger(IesDigitalClient.class.getName()).log(Level.SEVERE, null, ex);
+            } catch (SQLException ex) {
+                Logger.getLogger(IesDigitalClient.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            
+            Compare compare = new Compare(mysqlClone, tmpDB, mysql, ICoreData.core_mysqlDBPrefix);
+            compareStructure1 = compare.compareStructure();
+            for (CompareIncidence ci: compareStructure1)
+            {
+                result += ci.toString();
+            }
+            mysqlClone.executeUpdate("DROP DATABASE "+tmpDB);
+        }
+       
+        
+        boolean doesSchemaExists = mysqlClone.doesSchemaExists(ICoreData.core_mysqlDBPrefix+year);
+        if(!doesSchemaExists)
+        {
+            System.out.println("Creating "+ ICoreData.core_mysqlDBPrefix+year);
+            mysqlClone.executeUpdate("CREATE DATABASE "+ICoreData.core_mysqlDBPrefix+year);
+            mysqlClone.setCatalog(ICoreData.core_mysqlDBPrefix+year);
+            //Create from script
+            InputStream istream = getClass().getResourceAsStream("/org/iesapp/clients/iesdigital/sql/iesdigitalxxxx.sql");
+            ScriptRunner srun = new ScriptRunner(mysqlClone.getConnection(), false, false);
+            try {
+                srun.runScript(new InputStreamReader(istream));
+            } catch (IOException ex) {
+                Logger.getLogger(IesDigitalClient.class.getName()).log(Level.SEVERE, null, ex);
+            } catch (SQLException ex) {
+                Logger.getLogger(IesDigitalClient.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+        else
+        {
+            //Check it with script tmp backup
+            String tmpDB = "tmp"+Math.round(Math.random()*1e8);
+            mysqlClone.executeUpdate("CREATE DATABASE "+tmpDB);
+            System.out.println("Creating "+ tmpDB);
+            mysqlClone.setCatalog(tmpDB);
+            //Create from script
+            InputStream istream = getClass().getResourceAsStream("/org/iesapp/clients/iesdigital/sql/iesdigitalxxxx.sql");
+            ScriptRunner srun = new ScriptRunner(mysqlClone.getConnection(), false, false);
+            try {
+                srun.runScript(new InputStreamReader(istream));
+            } catch (IOException ex) {
+                Logger.getLogger(IesDigitalClient.class.getName()).log(Level.SEVERE, null, ex);
+            } catch (SQLException ex) {
+                Logger.getLogger(IesDigitalClient.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            
+            Compare compare = new Compare(mysqlClone, tmpDB, mysql, ICoreData.core_mysqlDBPrefix+year);
+            compareStructure2 = compare.compareStructure();
+            for (CompareIncidence ci: compareStructure2)
+            {
+                result += ci.toString();
+            }
+            mysqlClone.executeUpdate("DROP DATABASE "+tmpDB);
+            
+        }
+        mysqlClone.close();
+        return result;
+    }
+
+    @Override
+    public String fixDatabases() {
+        if (this.compareStructure1 == null && this.compareStructure2==null) {
+            return "ERROR: CheckDatabases must be invoked before fixDatabases";
+        }
+        
+        //Create a clone of database connection
+        MyDatabase mysqlClone = new MyDatabase(mysql.getConBean());
+        boolean connect = mysqlClone.connect();
+        if (!connect) {
+            return "ERROR: No database connection";
+        }
+        
+        String result = "";
+
+        //Set up temporal database
+        //Check it with script tmp backup
+        if (compareStructure1 != null && !compareStructure1.isEmpty()) {
+            String tmpDB = "tmp" + Math.round(Math.random() * 1e8);
+            mysqlClone.executeUpdate("CREATE DATABASE " + tmpDB);
+            mysqlClone.setCatalog(tmpDB);
+            //Create from script
+            InputStream istream = getClass().getResourceAsStream("/org/iesapp/clients/iesdigital/sql/iesdigital.sql");
+            ScriptRunner srun = new ScriptRunner(mysqlClone.getConnection(), false, false);
+            try {
+                srun.runScript(new InputStreamReader(istream));
+            } catch (IOException ex) {
+                Logger.getLogger(IesDigitalClient.class.getName()).log(Level.SEVERE, null, ex);
+            } catch (SQLException ex) {
+                Logger.getLogger(IesDigitalClient.class.getName()).log(Level.SEVERE, null, ex);
+            }
+
+            Compare compare = new Compare(mysqlClone, tmpDB, mysql, ICoreData.core_mysqlDBPrefix);
+            ArrayList<CompareIncidence> notSolved = compare.fixStructure(compareStructure1);
+
+            for (CompareIncidence ci : notSolved) {
+                result += ci.toString();
+            }
+            mysqlClone.executeUpdate("DROP DATABASE " + tmpDB);
+        }     
+        
+        
+        //Check it with script tmp backup
+        if (compareStructure2 != null && !compareStructure2.isEmpty()) {
+            String tmpDB = "tmp" + Math.round(Math.random() * 1e8);
+            mysqlClone.executeUpdate("CREATE DATABASE " + tmpDB);
+            mysqlClone.setCatalog(tmpDB);
+            //Create from script
+            InputStream istream = getClass().getResourceAsStream("/org/iesapp/clients/iesdigital/sql/iesdigitalxxxx.sql");
+            ScriptRunner srun = new ScriptRunner(mysqlClone.getConnection(), false, false);
+            try {
+                srun.runScript(new InputStreamReader(istream));
+            } catch (IOException ex) {
+                Logger.getLogger(IesDigitalClient.class.getName()).log(Level.SEVERE, null, ex);
+            } catch (SQLException ex) {
+                Logger.getLogger(IesDigitalClient.class.getName()).log(Level.SEVERE, null, ex);
+            }
+
+            Compare compare = new Compare(mysqlClone, tmpDB, mysql, ICoreData.core_mysqlDBPrefix+this.checkedYear);
+            ArrayList<CompareIncidence> notSolved = compare.fixStructure(compareStructure2);
+
+            for (CompareIncidence ci : notSolved) {
+                result += ci.toString();
+            }
+            mysqlClone.executeUpdate("DROP DATABASE " + tmpDB);
+        }
+        
+        mysqlClone.close();
+        this.compareStructure1 = null;
+        this.compareStructure2 = null;
+
+        return result;
+    }
+
 }

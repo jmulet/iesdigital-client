@@ -136,7 +136,7 @@ public class IUser {
         if (carrecs.contains("Tutor")) {
             this.grant=IUser.TUTOR;
         } else if (this.role.startsWith("ADMIN")) {
-            name = "ADMINISTRADOR";
+            //name = "ADMINISTRADOR";
             grant = IUser.ADMIN;
             carrec = "Administració del sistema";
         } else if (this.role.startsWith("PREF")) {

@@ -45,6 +45,10 @@ public class TestClient {
         ICoreData.configTableMap.put("sgdDBPrefix", "curso");
         IesDigitalClient client = new IesDigitalClient(mysql,sgd,coredata);
         
+        System.out.println("Check "+client.checkDatabases(2012));
+        System.out.println("fix "+client.fixDatabases());
+        System.exit(0);
+        
         Medicaments med = new Medicaments(client);
         ArrayList<BeanMedicamentsAutoritzats> listInformeAutoritzats = med.listInformeAutoritzats();
         for(BeanMedicamentsAutoritzats b: listInformeAutoritzats)
